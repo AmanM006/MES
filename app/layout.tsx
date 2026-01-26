@@ -32,3 +32,7 @@ export default function RootLayout({
     </html>
   );
 }
+<<<<<<< HEAD
+
+=======
+>>>>>>> origin/main
