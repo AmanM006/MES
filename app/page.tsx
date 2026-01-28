@@ -4,6 +4,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { PerspectiveCamera, Environment, useGLTF, useAnimations } from "@react-three/drei";
 import { useRef, useEffect, useState, Suspense, useLayoutEffect, useMemo } from "react";
 import * as THREE from "three";
+import DollarRain from "./components/DollarRain";
 import { SkeletonUtils } from "three-stdlib";
 import Prism from "../components/Prism";
 import Tunnel from "../components/Tunnel";
@@ -228,24 +229,72 @@ useGLTF.preload("/models/BusinessmanFinal-copy.glb");
 // =========================================
 function HeroBusinessman() {
   const group = useRef<THREE.Group>(null);
-  const { scene, animations } = useGLTF("/models/BusinessmanFinal.glb");
-  const { actions } = useAnimations(animations, group);
+  
+  // Load BOTH models
+  const model1 = useGLTF("/models/BusinessmanFinal.glb");
+  const model2 = useGLTF("/models/onlyGreeting.glb"); // Replace with your 2nd file name
+  
+  // Get animations for both
+  const actions1 = useAnimations(model1.animations, group).actions;
+  const actions2 = useAnimations(model2.animations, group).actions;
+
+  const [showSecondModel, setShowSecondModel] = useState(false);
+  const [startRain, setStartRain] = useState(false);
 
   useEffect(() => {
-    const action = actions["greeting"] || 
-                   Object.values(actions).find(a => a!.getClip().name.toLowerCase().includes("greet")) || 
-                   actions[Object.keys(actions)[0]];
-    
-    action?.reset().fadeIn(0.5).play();
-  }, [actions]);
+    // Play Idle on the first model immediately
+    const idleAction = actions1["idle"];
+    idleAction?.reset().fadeIn(0.5).play();
+
+    const timer = setTimeout(() => {
+      // 1. Hide Model 1, Show Model 2
+      setShowSecondModel(true);
+      
+      // 2. Play Greeting on the NEW model
+      const greetAction = actions2[""] || 
+                         Object.values(actions2).find(a => a!.getClip().name.toLowerCase().includes("greet"));
+      
+      if (greetAction) {
+        greetAction.reset().fadeIn(0.1).play();
+      }
+
+      // 3. Start the money rain
+      setStartRain(true);
+    }, 1500); // Trigger exactly when he hits the "spotlight"
+
+    return () => clearTimeout(timer);
+  }, [actions1, actions2]);
 
   return (
     <group ref={group}>
-      <primitive object={scene} position={[0, -2.9, 0]} scale={550} />
+      {/* Model 1: The "Entry" Model */}
+      {!showSecondModel && (
+        <primitive 
+          object={model1.scene} 
+          position={[0, -4.5, 0]} 
+          scale={500} 
+        />
+      )}
+
+      {/* Model 2: The "Spotlight" Model */}
+      {showSecondModel && (
+        <primitive 
+          object={model2.scene} 
+          position={[0, -0.5, 0]} 
+          scale={500} 
+        />
+      )}
+      
+      {startRain && <DollarRain />}
     </group>
   );
 }
+
+// Preload both to prevent a "flicker" during the swap
 useGLTF.preload("/models/BusinessmanFinal.glb");
+useGLTF.preload("/models/onlyGreeting.glb");
+
+
 
 // =========================================
 // EXPANDING SECTION
@@ -379,16 +428,15 @@ export default function Home() {
         </nav>
         <div className="relative z-10 w-full max-w-[1600px] mx-auto px-4 flex items-center justify-center">
             <h1 className="font-serif-display italic text-6xl md:text-8xl lg:text-[10rem] leading-none text-white mix-blend-difference flex-1 text-right pr-12 md:pr-24">MES</h1>
-            <div className="w-[450px] h-[450px] relative shrink-0 z-20">
-                <Canvas gl={{ antialias: true, alpha: true }}>
-                    <PerspectiveCamera makeDefault position={[0, 0, 8]} fov={50} />
-                    <ambientLight intensity={0.5} />
-                    <spotLight position={[10, 15, 10]} intensity={3} color="white" />
-                    <spotLight position={[-5, 5, -10]} intensity={5} color="#22c55e" />
-                    <spotLight position={[5, 0, -10]} intensity={5} color="#ef4444" />
-                    <Environment preset="city" />
-                    <Suspense fallback={null}><HeroBusinessman /></Suspense>
-                </Canvas>
+          <div className="relative w-full h-screen overflow-visible"> 
+    <Canvas 
+      shadows 
+      camera={{ position: [0, 0, 10], fov: 50 }}
+      style={{ pointerEvents: 'none' }} // Allows users to click buttons behind the 3D
+    >
+        <ambientLight intensity={1} />
+        <HeroBusinessman />
+    </Canvas>
             </div>
             <h1 className="font-serif-display text-6xl md:text-8xl lg:text-[10rem] leading-none text-white mix-blend-difference flex-1 text-left pl-12 md:pl-24">2026</h1>
         </div>
