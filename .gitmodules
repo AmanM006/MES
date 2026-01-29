@@ -1,0 +1,3 @@
+[submodule "src/lib/tunnelgl"]
+	path = src/lib/tunnelgl
+	url = https://github.com/jeromeetienne/tunnelgl.git
