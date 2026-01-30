@@ -1,0 +1,34 @@
+.glass-surface {
+  position: relative;
+  backdrop-filter: var(--glass-filter);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+}
+
+.glass-surface-content {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.glass-filter-svg {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.glass-surface {
+  position: relative;
+  isolation: isolate;
+}
+
+.glass-surface-content {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

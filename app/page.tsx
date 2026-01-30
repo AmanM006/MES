@@ -7,8 +7,9 @@ import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
 import Prism from "../components/Prism";
 import Tunnel from "../components/Tunnel";
-import DollarRain from "./components/DollarRain";
+import DollarRain from "@/components/DollarRain";
 import Navbar from "@/components/Navbar";
+import GlassNavbar from "@/components/GlassNavbar";
 // =========================================
 // SCROLL DEBUGGER
 // =========================================

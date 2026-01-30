@@ -1,4 +1,4 @@
-import MESTimeline from '../components/TimeLine';
+import MESTimeline from '../../components/TimeLine';
 
 export default function Home() {
   return (
