@@ -13,10 +13,10 @@ const IMAGE_URLS = [
 ];
 
 export default function Page() {
-  const [email, setEmail] = useState<string>("");
-  const [password, setPassword] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null); // Inline error state
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
   const handleLogin = async (e: FormEvent<HTMLFormElement>) => {
@@ -25,11 +25,10 @@ export default function Page() {
     setError(null);
 
     try {
-      const response = await fetch("http://localhost:5000/auth/login", {
+      // ✅ FIX: Pointing to port 8080 (Your Backend) instead of 3000
+      const response = await fetch("http://localhost:8080/auth/login", { 
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
         credentials: "include", 
       });
@@ -37,21 +36,23 @@ export default function Page() {
       const data = await response.json();
 
       if (response.ok) {
-        // Successful login: reroute to /student
-        router.push("/student");
+        setTimeout(() => router.push('/student'), 500);
       } else {
-        setError(data.message || "Login failed. Please check your credentials.");
+        setError(data.message || "Login failed.");
       }
     } catch (error) {
-      console.error("Network error:", error);
-      setError("Connection error: Is your backend running?");
+      console.error("Login Error:", error);
+      // Helpful error message telling you exactly what to check
+      setError("Connection error: Ensure backend is running on port 8080");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <>
+    <div className="page-wrapper">
+      
+      {/* BACKGROUND WALL */}
       <div className="wall">
         <Row direction="left" />
         <Row direction="right" />
@@ -59,79 +60,185 @@ export default function Page() {
         <Row direction="right" />
       </div>
 
+      {/* LOGIN FORM */}
       <div className="focus">
         <form className="login-box" onSubmit={handleLogin}>
-          <h2>Sign in</h2>
-          <p className="subtitle">Welcome back! Please enter your details.</p>
+          <div className="header">
+            <h2>Sign in</h2>
+            <p className="subtitle">Welcome back! Please enter your details.</p>
+          </div>
 
-          {/* Inline Error Display */}
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
+          {error && <div className="error-message">{error}</div>}
 
-          <input 
-            type="email" 
-            placeholder="Email Address" 
-            value={email} 
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                setEmail(e.target.value);
-                if(error) setError(null);
-            }} 
-            required
-          />
-          <input 
-            type="password" 
-            placeholder="Password" 
-            value={password} 
-            onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                setPassword(e.target.value);
-                if(error) setError(null);
-            }} 
-            required
-          />
-          <button type="submit" disabled={loading}>
+          <div className="input-group">
+            <input 
+              type="email" 
+              placeholder="Email Address" 
+              value={email} 
+              onChange={(e) => { setEmail(e.target.value); setError(null); }} 
+              required
+            />
+          </div>
+          
+          <div className="input-group">
+            <input 
+              type="password" 
+              placeholder="Password" 
+              value={password} 
+              onChange={(e) => { setPassword(e.target.value); setError(null); }} 
+              required
+            />
+          </div>
+
+          <button type="submit" disabled={loading} className="submit-btn">
             {loading ? "Verifying..." : "Login"}
           </button>
         </form>
       </div>
 
-      {/* Basic styles for the error message if you haven't added them yet */}
       <style jsx>{`
-        .error-message {
-          background: #fee2e2;
-          border: 1px solid #ef4444;
-          color: #b91c1c;
-          padding: 0.75rem;
-          border-radius: 0.75rem;
-          font-size: 0.875rem;
-          font-weight: 600;
-          margin-bottom: 1rem;
-          text-align: center;
+        /* --- LAYOUT --- */
+        .page-wrapper {
+          position: relative;
+          width: 100vw;
+          height: 100vh;
+          overflow: hidden;
+          background-color: #050505;
+          font-family: sans-serif;
         }
+
+        /* --- BACKGROUND WALL --- */
+        .wall {
+          position: absolute;
+          inset: 0;
+          z-index: 0;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 1.5rem;
+          opacity: 0.3;
+          pointer-events: none; /* Allows clicks to pass through to form */
+        }
+
+        .row { display: flex; width: 100%; overflow: hidden; }
+        .track { display: flex; gap: 1.5rem; width: max-content; }
+        .track.left { animation: slideLeft 60s linear infinite; }
+        .track.right { animation: slideRight 60s linear infinite; }
+
+        @keyframes slideLeft { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        @keyframes slideRight { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+
+        img {
+          width: 250px;
+          height: 160px;
+          object-fit: cover;
+          border-radius: 12px;
+          filter: grayscale(100%);
+          opacity: 0.6;
+        }
+
+        /* --- FORM CONTAINER --- */
+        .focus {
+          position: absolute;
+          inset: 0;
+          z-index: 10;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          pointer-events: auto;
+        }
+
+        /* --- LOGIN CARD UI --- */
+        .login-box {
+          background: rgba(30, 30, 30, 0.6);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          padding: 2.5rem;
+          border-radius: 1rem;
+          width: 100%;
+          max-width: 400px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        h2 {
+          color: white;
+          font-size: 2rem;
+          font-weight: 600;
+          margin: 0 0 0.5rem 0;
+        }
+
         .subtitle {
-          color: #6b7280;
-          margin-bottom: 1.5rem;
+          color: #888;
           font-size: 0.9rem;
+          margin: 0;
+        }
+
+        .input-group input {
+          width: 100%;
+          padding: 1rem;
+          border-radius: 0.5rem;
+          border: none;
+          background: #2A2A2A;
+          color: white;
+          font-size: 1rem;
+          outline: none;
+          transition: all 0.2s;
+        }
+
+        .input-group input:focus {
+          background: #333;
+          box-shadow: 0 0 0 2px #6d28d9;
+        }
+
+        .submit-btn {
+          width: 100%;
+          padding: 1rem;
+          border-radius: 0.5rem;
+          border: none;
+          background: #6d28d9;
+          color: white;
+          font-size: 1rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.2s;
+          margin-top: 0.5rem;
+        }
+
+        .submit-btn:hover {
+          background: #5b21b6;
+        }
+
+        .submit-btn:disabled {
+          background: #4b5563;
+          cursor: not-allowed;
+        }
+
+        .error-message {
+          background: rgba(220, 38, 38, 0.2);
+          color: #fca5a5;
+          padding: 0.75rem;
+          border-radius: 0.5rem;
+          font-size: 0.875rem;
+          text-align: center;
+          border: 1px solid rgba(220, 38, 38, 0.5);
         }
       `}</style>
-    </>
+    </div>
   );
 }
 
 /* --- COMPONENTS --- */
 
-interface RowProps {
-  direction: "left" | "right";
-}
-
-function Row({ direction }: RowProps) {
-  const renderImages = (suffix: string): JSX.Element[] => 
+function Row({ direction }: { direction: "left" | "right" }) {
+  const renderImages = (suffix: string) => 
     IMAGE_URLS.map((src, i) => (
       <img 
         key={`${suffix}-${i}`} 
-        src={`${src}?auto=format&fit=crop&w=600&q=80`} 
+        src={`${src}?auto=format&fit=crop&w=500&q=80`} 
         alt="" 
       />
     ));
@@ -141,6 +248,7 @@ function Row({ direction }: RowProps) {
       <div className={`track ${direction}`}>
         {renderImages("a")}
         {renderImages("b")}
+        {renderImages("c")}
       </div>
     </div>
   );

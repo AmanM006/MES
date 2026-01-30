@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame } from "@react-three/fiber";
-import { PerspectiveCamera, Environment, useGLTF, useAnimations } from "@react-three/drei";
+import { PerspectiveCamera, useGLTF, useAnimations } from "@react-three/drei";
 import { useRef, useEffect, useState, Suspense, useLayoutEffect, useMemo } from "react";
 import * as THREE from "three";
 import { SkeletonUtils } from "three-stdlib";
@@ -9,7 +9,8 @@ import Prism from "../components/Prism";
 import Tunnel from "../components/Tunnel";
 import DollarRain from "@/components/DollarRain";
 import Navbar from "@/components/Navbar";
-import GlassNavbar from "@/components/GlassNavbar";
+import CardSwap, { Card, CardSwapHandle } from "../components/CardsSwap";
+
 // =========================================
 // SCROLL DEBUGGER
 // =========================================
@@ -32,7 +33,7 @@ function ScrollDebugger() {
   }, []);
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] bg-red-600 text-white font-mono text-xs p-3 rounded pointer-events-none">
+    <div className="fixed top-4 right-4 z-[50001] bg-red-600 text-white font-mono text-xs p-3 rounded pointer-events-none">
       <div>SCROLL Y: {info.px}px</div>
       <div>VH: {info.vh}</div>
     </div>
@@ -40,14 +41,13 @@ function ScrollDebugger() {
 }
 
 // =========================================
-// FALLING MAN (GLOBAL COMPONENT)
+// IDLE MAN (Simplified Falling Man)
 // =========================================
 function FallingMan() {
   const group = useRef<THREE.Group>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionsRef = useRef<Record<string, THREE.AnimationAction>>({});
-  const [currentPhase, setCurrentPhase] = useState("idle");
-
+  
   const gltf = useGLTF("/models/BusinessmanFinal-copy.glb");
   const scene = useMemo(() => SkeletonUtils.clone(gltf.scene), [gltf.scene]);
   const animations = gltf.animations;
@@ -55,14 +55,11 @@ function FallingMan() {
 
   const BASE_SCALE = 450; 
 
+  // Setup Animations
   const actions = useMemo(() => {
     const actionMap: Record<string, THREE.AnimationAction> = {};
     animations.forEach((clip) => {
       const action = mixer.clipAction(clip);
-      if (clip.name.toLowerCase().match(/dive|run|jump/)) {
-        action.clampWhenFinished = true;
-        action.loop = THREE.LoopOnce;
-      }
       actionMap[clip.name.toLowerCase()] = action;
     });
     return actionMap;
@@ -71,151 +68,60 @@ function FallingMan() {
   useLayoutEffect(() => {
     mixerRef.current = mixer;
     actionsRef.current = actions;
+    // Play Idle animation by default
+    const idle = actions["idle"] || Object.values(actions)[0];
+    idle?.reset().play();
+
+    // Material setup
     scene.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh;
-        mesh.renderOrder = 999;
-        mesh.frustumCulled = false;
-        if (mesh.material) {
-          const mat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
-          mat.side = THREE.DoubleSide;
-          mat.transparent = false;
-          mat.opacity = 1;
-        }
+        mesh.frustumCulled = false; // Prevent flickering
       }
     });
   }, [scene, mixer, actions]);
 
-  const playAnimation = (name: string) => {
-    Object.values(actionsRef.current).forEach(a => a.stop());
-    let anim: THREE.AnimationAction | undefined = actionsRef.current[name];
-    if (!anim) {
-       const allAnims = Object.values(actionsRef.current);
-       anim = allAnims.find(a => a
-        
-        
-        .getClip().name.toLowerCase().includes(name));
-    }
-    if (!anim) anim = Object.values(actionsRef.current)[0];
-    anim?.reset().fadeIn(0.5).play();
-  };
-
   useFrame((state, delta) => {
     if (!group.current) return;
     const scrollY = window.scrollY;
+    const vh = window.innerHeight;
 
     // --- CONFIGURATION ---
-    const appearStart = 300;   
-    const fullyExpanded = 1500; 
+    const appearStart = 300;     // When to start showing him
+    const fullyExpanded = 1500;  // When he reaches full size
+    const disappearStart = vh * 5.5; // Hide him after Expanding Section ends (~550vh)
 
-    // --- 1. VISIBILITY & POSITION LOCKING ---
-    if (scrollY < appearStart) {
+    // 1. HIDDEN (Before expanding section OR after it ends)
+    if (scrollY < appearStart || scrollY > disappearStart) {
         group.current.visible = false;
-        
-        return; 
-    } 
-    
+        return;
+    }
+
+    // 2. VISIBLE
     group.current.visible = true;
 
-    // EXPANSION PHASE (160px - 1500px)
+    // 3. ANIMATION: Expand and slide to center
     if (scrollY < fullyExpanded) {
         const expandProgress = (scrollY - appearStart) / (fullyExpanded - appearStart);
         const p = Math.max(0, Math.min(1, expandProgress));
         
-        // SCALE: Grow from 0 to 450
+        // Scale 0 -> 450
         const currentScale = THREE.MathUtils.lerp(0, BASE_SCALE, p);
         group.current.scale.set(currentScale, currentScale, currentScale);
-        const startX = -3.5; // <--- CHANGE THIS NUMBER
-        const endX = 0;      // Where he ends up (Center)
-        // X-LOCK: Slide from Left (-3.5) to Center (0) to match the card moving
-const currentX = THREE.MathUtils.lerp(startX, endX, p);
-        group.current.position.x = currentX;
-        // Y-LOCK: Keep him vertically centered in the screen (-1.0 puts his center mass in middle)
-        group.current.position.y = -1.0; 
         
-        // Z-LOCK: Keep him close
-        group.current.position.z = 0;
-
-        // Ensure rotation is reset
-        group.current.rotation.set(0, 0, 0);
-
-        // Ensure Idle is playing
-        if (currentPhase !== "idle") {
-            setCurrentPhase("idle");
-            const idle = actions["idle"] || Object.values(actions).find(a => !a.getClip().name.toLowerCase().includes("greet"));
-            idle?.reset().play();
-        }
-
-        // Return early so we don't overwrite positions with later logic
-        if (mixerRef.current) mixerRef.current.update(delta);
-        return;
+        // Slide X: -3.5 -> 0
+        const currentX = THREE.MathUtils.lerp(-3.5, 0, p);
+        group.current.position.set(currentX, -1.0, 0);
     } else {
-        // LOCK to Normal Size after expansion
+        // 4. LOCKED: He stays full size and centered
         group.current.scale.set(BASE_SCALE, BASE_SCALE, BASE_SCALE);
-        // Reset X to perfect center for the rest of the animation
-        group.current.position.x = 0;
+        group.current.position.set(0, -1.0, 0);
     }
 
-    // --- 2. REST OF THE SCROLL ANIMATION ---
-    const startRotate = 2200; 
-    const startDive = 3400;   
-    const flashStart = 9530;   
-    const reversePoint = 9701; 
-    const galaxyExit = 13800;  
-    const finalIdle = 14683;   
+    // Always reset rotation so he doesn't spin
+    group.current.rotation.set(0, 0, 0);
 
-    // PHASE 1: IDLE & SPIN
-    if (scrollY < startDive) {
-      if (scrollY < startRotate) {
-        // Just maintain position set in the else block above
-        group.current.position.y = -1.0; 
-        group.current.rotation.set(0, 0, 0);
-      } else {
-        const rotProg = (scrollY - startRotate) / (startDive - startRotate);
-        group.current.rotation.y = rotProg * (Math.PI * 6);
-        group.current.position.y = -1.0; 
-      }
-    } 
-    // PHASE 2: DIVING
-    else if (scrollY < flashStart) {
-      if (currentPhase !== "diving") {
-        setCurrentPhase("diving");
-        playAnimation("dive"); 
-      }
-      const diveProg = (scrollY - startDive) / (flashStart - startDive);
-      group.current.position.z = -(diveProg * 45); 
-      group.current.position.y = -1.0; 
-      group.current.rotation.set(Math.PI * 0.2, Math.PI, 0); 
-    }
-    // PHASE 3: FLIP (Hidden)
-    else if (scrollY < reversePoint) {
-      group.current.rotation.set(-Math.PI * 0.1, 0, 0); 
-      group.current.position.z = -45;
-    }
-    // PHASE 4: COMING OUT
-    else if (scrollY < galaxyExit) {
-      if (currentPhase !== "exiting") setCurrentPhase("exiting");
-      const exitProg = (scrollY - reversePoint) / (galaxyExit - reversePoint);
-      group.current.position.z = THREE.MathUtils.lerp(-45, 5, exitProg);
-      // Drop him down to floor level (-2.5) as he arrives
-      group.current.position.y = THREE.MathUtils.lerp(-1.0, -2.5, exitProg);
-      group.current.rotation.set(-Math.PI * 0.1, 0, 0); 
-    }
-    // PHASE 5: FINAL GREETING
-    else {
-      if (scrollY > finalIdle) {
-        if (currentPhase !== "greeting") {
-          setCurrentPhase("greeting");
-          playAnimation("greeting");
-        }
-        group.current.position.set(0, -2.5, 5); 
-        group.current.rotation.set(0, 0, 0);
-      } else {
-        const shatterProg = (scrollY - galaxyExit) / (finalIdle - galaxyExit);
-        group.current.position.z = 5 + (shatterProg * 2);
-      }
-    }
-
+    // Update animation mixer
     if (mixerRef.current) mixerRef.current.update(delta);
   });
 
@@ -230,79 +136,49 @@ useGLTF.preload("/models/BusinessmanFinal-copy.glb");
 // =========================================
 function HeroBusinessman() {
   const group = useRef<THREE.Group>(null);
-  
-  // Load BOTH models
   const model1 = useGLTF("/models/BusinessmanFinal.glb");
-  const model2 = useGLTF("/models/onlyGreeting.glb"); // Replace with your 2nd file name
-  
-  // Get animations for both
+  const model2 = useGLTF("/models/onlyGreeting.glb"); 
   const actions1 = useAnimations(model1.animations, group).actions;
   const actions2 = useAnimations(model2.animations, group).actions;
-
   const [showSecondModel, setShowSecondModel] = useState(false);
   const [startRain, setStartRain] = useState(false);
 
   useEffect(() => {
-    // Play Idle on the first model immediately
     const idleAction = actions1["idle"];
     idleAction?.reset().fadeIn(0.5).play();
 
     const timer = setTimeout(() => {
-      // 1. Hide Model 1, Show Model 2
       setShowSecondModel(true);
-      
-      // 2. Play Greeting on the NEW model
-      const greetAction = actions2[""] || 
-                         Object.values(actions2).find(a => a!.getClip().name.toLowerCase().includes("greet"));
-      
-      if (greetAction) {
-        greetAction.reset().fadeIn(0.1).play();
-      }
-
-      // 3. Start the money rain
+      const greetAction = actions2[""] || Object.values(actions2).find(a => a!.getClip().name.toLowerCase().includes("greet"));
+      if (greetAction) greetAction.reset().fadeIn(0.1).play();
       setStartRain(true);
-    }, 1500); // Trigger exactly when he hits the "spotlight"
+    }, 1500); 
 
     return () => clearTimeout(timer);
   }, [actions1, actions2]);
 
   return (
     <group ref={group}>
-      {/* Model 1: The "Entry" Model */}
       {!showSecondModel && (
-        <primitive 
-          object={model1.scene} 
-          position={[0, -7.5, 0]} 
-          scale={500} 
-        />
+        <primitive object={model1.scene} position={[0, -7.5, 0]} scale={500} />
       )}
-
-      {/* Model 2: The "Spotlight" Model */}
       {showSecondModel && (
-        <primitive 
-          object={model2.scene} 
-          position={[0, -1.0, 0]} 
-          scale={500} 
-        />
+        <primitive object={model2.scene} position={[0, -1.0, 0]} scale={500} />
       )}
-      
       {startRain && <DollarRain />}
     </group>
   );
 }
-
-// Preload both to prevent a "flicker" during the swap
 useGLTF.preload("/models/BusinessmanFinal.glb");
-useGLTF.preload("/models/onlyGreeting.glb");
-
-
 
 // =========================================
 // EXPANDING SECTION
 // =========================================
 function ExpandingSection() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const cardSwapRef = useRef<CardSwapHandle>(null);
   const [progress, setProgress] = useState(0);
+  const lastTriggerRef = useRef(0); 
 
   useEffect(() => {
       const handleScroll = () => {
@@ -316,31 +192,114 @@ function ExpandingSection() {
       return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const expansionProgress = Math.min(1, progress * 2);
+  const timeline = progress * 2.5;
+  const expansionCap = Math.min(1, timeline);
   const ease = (t: number) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-  const easedP = ease(expansionProgress);
-  const isLocked = expansionProgress >= 0.99;
+  const easedBox = ease(expansionCap);
+  const isLocked = expansionCap >= 0.99;
+
+  useEffect(() => {
+    if (timeline > 1.3 && lastTriggerRef.current < 1) {
+        cardSwapRef.current?.triggerSwap();
+        lastTriggerRef.current = 1;
+    } else if (timeline > 1.8 && lastTriggerRef.current < 2) {
+        cardSwapRef.current?.triggerSwap();
+        lastTriggerRef.current = 2;
+    } else if (timeline < 1.0) {
+        lastTriggerRef.current = 0; 
+    }
+  }, [timeline]);
 
   return (
-      <section ref={containerRef} className="relative h-[500vh] bg-white font-sans z-20">           
+      <section ref={containerRef} className="relative h-[500vh] bg-white font-sans z-20">          
           <div className="sticky top-0 h-screen w-full flex items-center overflow-hidden">
               <div 
                   className="absolute bg-[#e0e0e0] overflow-hidden z-20 border border-black/10"
                   style={{ 
-                      width: isLocked ? '100%' : `${45 + easedP * 55}%`, 
-                      height: isLocked ? '100vh' : `${50 + easedP * 50}vh`,
+                      width: isLocked ? '100%' : `${45 + easedBox * 55}%`, 
+                      height: isLocked ? '100vh' : `${50 + easedBox * 50}vh`,
                       top: '50%',
-                      left: isLocked ? '0' : `${10 * (1 - easedP)}%`,
+                      left: isLocked ? '0' : `${10 * (1 - easedBox)}%`,
                       transform: isLocked ? 'translate(0, -50%)' : 'translateY(-50%)',
-                      borderRadius: isLocked ? '0px' : `${40 * (1 - easedP)}px`,
+                      borderRadius: isLocked ? '0px' : `${40 * (1 - easedBox)}px`,
                       willChange: 'width, height, left, transform'
                   }}
               >
-                 <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' viewBox='0 0 1000 500' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 400 Q 250 450, 500 300 T 1000 50' stroke='%23000' stroke-width='2' fill='none' opacity='0.1'/%3E%3C/svg%3E")`, backgroundSize: '100% 100%', opacity: 0.6 + easedP * 0.4 }} />
-                 <div className="absolute bottom-12 left-12 z-30 pointer-events-none">
-                    <h2 className="font-serif-display text-black text-6xl leading-none">Take the Leap.</h2>
-                    <div className="overflow-hidden" style={{ maxHeight: easedP > 0.8 ? '200px' : '0px', opacity: Math.max(0, (easedP - 0.8) * 5), marginTop: easedP > 0.8 ? '1rem' : '0', transition: 'all 0.5s' }}>
-                        <p className="text-gray-700 max-w-md text-lg">Your journey from zero to one starts here.</p>
+                 <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' viewBox='0 0 1000 500' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 400 Q 250 450, 500 300 T 1000 50' stroke='%23000' stroke-width='2' fill='none' opacity='0.1'/%3E%3C/svg%3E")`, backgroundSize: '100% 100%', opacity: 0.6 + easedBox * 0.4 }} />
+                 
+                 {/* Text Content */}
+                 <div className="absolute bottom-32 left-12 z-30 pointer-events-none">
+                    <h2 
+                        className="font-serif-display text-black text-6xl leading-none"
+                        style={{
+                            opacity: Math.max(0, (timeline - 0.5) * 5),
+                            transform: `translateY(${timeline > 0.5 ? '0' : '20px'})`,
+                            transition: 'opacity 0.5s, transform 0.5s'
+                        }}
+                    >
+                        Take the Leap.
+                    </h2>
+                    <div 
+                        className="overflow-hidden" 
+                        style={{ 
+                            maxHeight: timeline > 0.6 ? '200px' : '0px', 
+                            opacity: Math.max(0, (timeline - 0.6) * 5),
+                            marginTop: timeline > 0.6 ? '1rem' : '0', 
+                            transition: 'all 0.5s' 
+                        }}
+                    >
+                        <p className="text-gray-700 max-w-md text-lg">
+                            Your journey from zero to one starts here.
+                        </p>
+                    </div>
+                 </div>
+
+                 {/* Card Swap */}
+                 <div 
+                    className="absolute top-1/2 right-12 md:right-32 -translate-y-1/2 z-30 pointer-events-none"
+                    style={{
+                          opacity: Math.max(0, (timeline - 0.8) * 5),
+                          transition: 'opacity 0.5s'
+                    }}
+                 >
+                    <div className="pointer-events-auto"> 
+                        <CardSwap 
+                            ref={cardSwapRef}
+                            width="500px" 
+                            height="420px" 
+                            easing="elastic"
+                        >
+                            <Card customClass="bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl">
+                                <div className="relative w-full h-full">
+                                    <img src="https://images.unsplash.com/photo-1556157382-97eda2d62296?q=80&w=600&auto=format&fit=crop" className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" alt="Ashneer"/>
+                                    <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
+                                        <h3 className="text-white text-3xl font-serif-display italic">Ashneer</h3>
+                                        <h3 className="text-white text-3xl font-bold -mt-2">Grover</h3>
+                                        <p className="text-gray-400 text-xs mt-2 uppercase tracking-widest">BharatPe</p>
+                                    </div>
+                                </div>
+                            </Card>
+                            <Card customClass="bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl">
+                                <div className="relative w-full h-full">
+                                    <img src="https://images.unsplash.com/photo-1557862921-37829c790f19?q=80&w=600&auto=format&fit=crop" className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" alt="Aman"/>
+                                    <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
+                                        <h3 className="text-white text-3xl font-serif-display italic">Aman</h3>
+                                        <h3 className="text-white text-3xl font-bold -mt-2">Gupta</h3>
+                                        <p className="text-gray-400 text-xs mt-2 uppercase tracking-widest">boAt</p>
+                                    </div>
+                                </div>
+                            </Card>
+                            <Card customClass="bg-black border border-white/20 rounded-xl overflow-hidden shadow-2xl">
+                                <div className="relative w-full h-full">
+                                    <img src="https://images.unsplash.com/photo-1542909168-82c3e7fdca5c?q=80&w=600&auto=format&fit=crop" className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-500" alt="Ritesh"/>
+                                    <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-black via-black/80 to-transparent">
+                                        <h3 className="text-white text-3xl font-serif-display italic">Ritesh</h3>
+                                        <h3 className="text-white text-3xl font-bold -mt-2">Agarwal</h3>
+                                        <p className="text-gray-400 text-xs mt-2 uppercase tracking-widest">OYO</p>
+                                    </div>
+                                </div>
+                            </Card>
+                        </CardSwap>
                     </div>
                  </div>
               </div>
@@ -394,26 +353,20 @@ export default function Home() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const manZIndex = (scrollY > 9530 && scrollY < 10500) ? 40 : 9999;
-
   return (
-<div className="bg-[#050505] text-white w-full min-h-screen font-sans">
-  {/* LAYER 3: THE UI (Always on top and clickable) */}
-  <div className="fixed top-0 left-0 w-full z-9999 pointer-events-none">
-    {/* Wrap Navbar content in pointer-events-auto so links work */}
-    <div className="pointer-events-auto">
+    <div className="bg-[#050505] text-white w-full min-h-screen font-sans">
+      {/* LAYER 3: THE UI (Always on top)
+         FIX: Navbar is z-[50000] to beat the 3D Canvas
+      */}
       <Navbar />
-    </div>
-  </div>
 
-  <ScrollDebugger />
-
-      {/* 🚀 GLOBAL FALLING MAN CANVAS */}
+      {/* GLOBAL FALLING MAN CANVAS
+         FIX: z-index is lower than Navbar
+      */}
       <div 
         className="fixed inset-0 pointer-events-none"
-        style={{ zIndex: manZIndex }}
+        style={{ zIndex: 10 }}
       >
-       <Navbar></Navbar>  
           <Canvas gl={{ antialias: true, alpha: true }}>
               <PerspectiveCamera makeDefault position={[0, 0, 16]} fov={50} />
               <ambientLight intensity={1.5} />
@@ -427,26 +380,22 @@ export default function Home() {
       </div>
 
       {/* HERO SECTION */}
-
       <section className="relative h-screen w-full flex flex-col justify-center overflow-hidden z-[100] ">
-         
         <div className="absolute inset-0 z-0"><Prism scale={4} colorFrequency={2.5} noise={0} /></div>
-      
-            <div className="relative z-10 w-full max-w-[1600px] mx-auto px-4 flex items-center justify-center">
-                <h1 className="font-serif-display italic text-6xl md:text-8xl lg:text-[10rem] leading-none text-white mix-blend-difference flex-1 text-right pr-12 md:pr-24">MES</h1>
-              <div className="relative w-full h-screen overflow-visible"> 
+          <div className="relative z-10 w-full max-w-[1600px] mx-auto px-4 flex items-center justify-center">
+              <h1 className="font-serif-display italic text-6xl md:text-8xl lg:text-[10rem] leading-none text-white mix-blend-difference flex-1 text-right pr-12 md:pr-24">MES</h1>
+            <div className="relative w-full h-screen overflow-visible"> 
         <Canvas 
           shadows 
           camera={{ position: [0, 0, 10], fov: 50 }}
-          style={{ pointerEvents: 'none' }} // Allows users to click buttons behind the 3D
+          style={{ pointerEvents: 'none' }} 
         >    
             <ambientLight intensity={1} />
-          
             <HeroBusinessman />
         </Canvas>
-                </div>
-                <h1 className="font-serif-display text-6xl md:text-8xl lg:text-[10rem] leading-none text-white mix-blend-difference flex-1 text-left pl-12 md:pl-24">2026</h1>
-            </div>
+              </div>
+              <h1 className="font-serif-display text-6xl md:text-8xl lg:text-[10rem] leading-none text-white mix-blend-difference flex-1 text-left pl-12 md:pl-24">2026</h1>
+          </div>
         <SponsorFooter/>
       </section>
 
@@ -456,24 +405,43 @@ export default function Home() {
         <Tunnel />
       </section>
 
-      {/* HIGHLIGHTS SECTION */}
-      <section className="relative z-30 px-6 md:px-16 py-32 bg-[#050505]">
-        <div className="max-w-7xl mx-auto">
-          <h2 className="text-4xl md:text-6xl font-serif-display italic mb-16 text-center text-white">
-            <span className="text-green-500 not-italic font-sans font-bold">02.</span> Highlights
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {[1, 2, 3].map((item, i) => (
-              <div key={i} className="h-[400px] bg-neutral-900 border border-neutral-800 rounded-sm relative group overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black opacity-80"></div>
-                  <div className="absolute inset-0 flex items-center justify-center text-white/5 opacity-0 group-hover:opacity-100 transition duration-500 text-9xl font-bold">{item}</div>
-                  <div className="absolute bottom-6 left-6 p-4">
-                      <h3 className="text-xl font-bold text-white">Event Highlight {item}</h3>
-                      <p className="text-gray-400 text-sm mt-2">Discover the future of entrepreneurship.</p>
-                  </div>
-              </div>
-            ))}
-          </div>
+      {/* NAVBAR SCROLL TARGETS 
+          Ensure these IDs match the hrefs in Navbar (#speakers, #events, etc.)
+      */}
+
+      {/* 1. SPEAKERS SECTION */}
+      <section id="speakers" className="relative z-30 min-h-screen w-full flex items-center justify-center bg-[#050505] border-t border-white/10">
+        <div className="text-center">
+            <h2 className="text-6xl md:text-8xl font-serif-display italic text-white mb-6">Speakers</h2>
+            <p className="text-gray-400 text-xl max-w-2xl mx-auto">Visionaries and industry leaders taking the stage.</p>
+        </div>
+      </section>
+
+      {/* 2. EVENTS SECTION */}
+      <section id="events" className="relative z-30 min-h-screen w-full flex items-center justify-center bg-[#0a0a0a] border-t border-white/5">
+        <div className="text-center">
+            <h2 className="text-6xl md:text-8xl font-serif-display italic text-white mb-6">Events</h2>
+            <p className="text-gray-400 text-xl max-w-2xl mx-auto">Workshops, Hackathons, and Networking sessions.</p>
+        </div>
+      </section>
+
+      {/* 3. TIMELINE SECTION */}
+      <section id="timeline" className="relative z-30 min-h-screen w-full flex items-center justify-center bg-[#050505] border-t border-white/5">
+        <div className="text-center">
+            <h2 className="text-6xl md:text-8xl font-serif-display italic text-white mb-6">Timeline</h2>
+            <p className="text-gray-400 text-xl max-w-2xl mx-auto">Three days of innovation and entrepreneurship.</p>
+        </div>
+      </section>
+
+      {/* 4. PASSES SECTION */}
+      <section id="passes" className="relative z-30 min-h-screen w-full flex items-center justify-center bg-gradient-to-b from-[#0a0a0a] to-[#000000] border-t border-white/5">
+        <div className="text-center">
+            <h2 className="text-6xl md:text-8xl font-serif-display italic text-white mb-6">Passes</h2>
+            <p className="text-gray-400 text-xl max-w-2xl mx-auto mb-10">Secure your spot at MES 2026.</p>
+            {/* Standard HTML link or Next Link here for redundant ticket button */}
+            <a href="/signup" className="inline-block px-8 py-4 rounded-full bg-white text-black font-bold hover:scale-105 transition-transform duration-300">
+                Get Tickets Now
+            </a>
         </div>
       </section>
 

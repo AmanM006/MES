@@ -1,77 +1,111 @@
-"use client";
+'use client';
 
-import React from "react";
-import Link from "next/link";
-import { motion } from "framer-motion";
-import GlassSurface from "@/components/GlassSurface";
+import GlassPill from './GlassPill';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
-interface NavLink {
-  name: string;
-  href: string;
-  type: "anchor" | "route";
-}
+const Navbar = () => {
+  const [isDarkBackground, setIsDarkBackground] = useState(true);
 
-const Navbar: React.FC = () => {
-  const navLinks: NavLink[] = [
-    { name: "Speakers", href: "/#speakers", type: "anchor" },
-    { name: "Events", href: "/#events", type: "anchor" },
-    { name: "Timeline", href: "/#timeline", type: "anchor" },
-    { name: "Passes", href: "/signup", type: "route" },
-  ];
+  useEffect(() => {
+    const checkBackground = () => {
+      const scrollY = window.scrollY;
+      const windowHeight = window.innerHeight;
+      
+      // 1. Hero Section: Dark BG
+      const isHero = scrollY < (windowHeight * 0.9);
+
+      // 2. Expanding Section (Light BG) ends at roughly 5.8 x viewport height
+      const isPastWhiteSection = scrollY > (windowHeight * 5.8);
+
+      // If we are in the Hero OR past the white expanding section, 
+      // the background is "Dark" (so we need Light Text).
+      const shouldBeLightText = isHero || isPastWhiteSection;
+      
+      setIsDarkBackground(shouldBeLightText);
+    };
+
+    window.addEventListener('scroll', checkBackground, { passive: true });
+    checkBackground();
+    
+    return () => window.removeEventListener('scroll', checkBackground);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return (
-    <nav className="fixed top-4 left-0 w-full z-[9999] pointer-events-none">
-      
-      {/* LEFT LOGO */}
-      <div className="absolute left-8 top-1/2 -translate-y-1/2 pointer-events-auto">
-        <Link href="/" className="text-2xl font-black tracking-tighter text-white">
-          MES<span className="text-red-600">2026</span>
-        </Link>
-      </div>
-
-      {/* CENTER GLASS PILL */}
-      <div className="flex justify-center pointer-events-auto">
-        <GlassSurface
-          width={400}                 // ✅ FIXED WIDTH
-          height={56}
-          borderRadius={999}
-          blur={12}
-          brightness={30}             // 🔥 DARKER GLASS
-          opacity={0.75}              // 🔥 LESS WHITE
-          backgroundOpacity={0.12}
-          saturation={1.1}
+    <nav className="fixed top-0 left-0 w-full z-[50000] pointer-events-none">
+      <div className="flex items-center justify-between px-8 py-6 pointer-events-auto">
+        
+        {/* Left: MES 2026 Logo (Click to Scroll Top) */}
+        <div 
+            className="flex items-center cursor-pointer group" 
+            onClick={scrollToTop}
         >
-          <div className="flex items-center justify-center gap-10">
-            {navLinks.map((link) => (
-              <Link
-                key={link.name}
-                href={link.href}
-                className="
-                  text-xs uppercase tracking-widest 
-                  text-black/80        // ✅ DARK TEXT
-                  hover:text-black 
-                  font-semibold
-                  transition-colors
-                "
-              >
-                {link.name}
-              </Link>
-            ))}
-          </div>
-        </GlassSurface>
-      </div>
+          <h1 className="font-serif-display text-2xl font-bold tracking-wide transition-colors duration-300">
+            {/* MES changes color based on background, 2026 stays RED */}
+            <span style={{ color: isDarkBackground ? 'beige':'beige' }}>MES</span>
+            <span className="text-red-600 ml-1.5">2026</span>
+          </h1>
+        </div>
 
-      {/* RIGHT CTA */}
-      <div className="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-auto">
-        <Link href="/signup">
-          <motion.button
-            whileHover={{ scale: 1.05, backgroundColor: "#dc2626", color: "#fff" }}
-            whileTap={{ scale: 0.95 }}
-            className="bg-white text-black px-6 py-2 font-bold uppercase text-xs tracking-tight rounded-sm"
+        {/* Center: Navigation Pills */}
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <GlassPill darkBackground={isDarkBackground}>
+            <div className="flex items-center gap-8 px-4">
+              <a 
+                href="#speakers" 
+                className="text-sm font-medium hover:opacity-70 transition-all duration-300"
+                style={{ color: isDarkBackground ? 'white' : 'black' }}
+              >
+                SPEAKERS
+              </a>
+
+              <a 
+                href="#events" 
+                className="text-sm font-medium hover:opacity-70 transition-all duration-300"
+                style={{ color: isDarkBackground ? 'white' : 'black' }}
+              >
+                EVENTS
+              </a>
+
+              <a 
+                href="#timeline" 
+                className="text-sm font-medium hover:opacity-70 transition-all duration-300"
+                style={{ color: isDarkBackground ? 'white' : 'black' }}
+              >
+                TIMELINE
+              </a>
+
+              <a 
+                href="#passes" 
+                className="text-sm font-medium hover:opacity-70 transition-all duration-300"
+                style={{ color: isDarkBackground ? 'white' : 'black' }}
+              >
+                PASSES
+              </a>
+            </div>
+          </GlassPill>
+        </div>
+
+        {/* Right: Get Tickets Button */}
+        <div className="flex items-center">
+          <Link 
+            href="/signup"
+            className="px-6 py-2.5 rounded-full font-medium text-sm transition-all hover:scale-105 duration-300 cursor-pointer relative z-50"
+            style={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              border: isDarkBackground 
+                ? '1px solid rgba(255, 255, 255, 0.2)' 
+                : '1px solid rgba(0, 0, 0, 0.1)',
+            }}
           >
-            Get Funding
-          </motion.button>
-        </Link>
+            GET TICKETS
+          </Link>
+        </div>
       </div>
     </nav>
   );
