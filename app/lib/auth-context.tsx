@@ -7,6 +7,7 @@ interface User {
   regNumber?: string;
   userType: 'MIT' | 'NON_MIT';
   personalEmail: string;
+  phone?: string; // 👈 ADD THIS LINE (Optional string)
 }
 
 interface AuthContextType {
@@ -22,8 +23,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Inside checkUserSession in auth-context.tsx
-const checkUserSession = async () => {
+  const checkUserSession = async () => {
     try {
         const res = await apiClient.get('/auth/me');
         if (res.data.success) {
@@ -33,11 +33,11 @@ const checkUserSession = async () => {
         }
     } catch (err) {
         console.error("Session check failed", err);
-        setUser(null); // Clear user if request fails
+        setUser(null); 
     } finally {
-        setLoading(false); // ALWAYS set loading to false here
+        setLoading(false); 
     }
-};
+  };
 
   useEffect(() => { checkUserSession(); }, []);
 

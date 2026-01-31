@@ -1,22 +1,63 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import QRCode from 'qrcode';
+import Script from 'next/script';
 import apiClient from '../lib/api-client';
 import { useAuth } from '../lib/auth-context';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Ticket as TicketIcon, Calendar, CheckCircle2, Clock, MapPin, ArrowLeft, Plus } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
 const ColorBends = dynamic(() => import('@/components/ColorBends'), { ssr: false });
 
+// --- SUCCESS OVERLAY COMPONENT ---
+const SuccessOverlay = ({ onClose }: { onClose: () => void }) => (
+    <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+    >
+        <motion.div 
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", damping: 15 }}
+            className="relative max-w-sm w-full bg-[#111] border border-emerald-500/30 rounded-[32px] p-8 text-center shadow-[0_0_50px_rgba(16,185,129,0.1)]"
+        >
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-emerald-500/20 rounded-full blur-[60px]" />
+            <div className="relative z-10">
+                <motion.div 
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ delay: 0.2, type: "spring" }}
+                    className="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg"
+                >
+                    <CheckCircle2 size={40} className="text-white" />
+                </motion.div>
+                <h2 className="text-3xl font-serif-display italic font-bold text-white mb-2">Ticket Secured!</h2>
+                <p className="text-gray-400 text-sm mb-8 leading-relaxed">
+                    Your transaction was successful. The digital pass has been added to your dashboard.
+                </p>
+                <button 
+                    onClick={onClose}
+                    className="w-full py-4 bg-white text-black font-bold rounded-2xl hover:scale-[1.02] transition-transform active:scale-95"
+                >
+                    View My Pass
+                </button>
+            </div>
+        </motion.div>
+    </motion.div>
+);
+
 interface Ticket {
     _id: string;
     eventName: string;
-    paymentStatus: string; // 'pending', 'completed', 'failed'
+    paymentStatus: string;
     isUsed: boolean;
+    qrData?: string; // 👈 Add this line
 }
 
 const CONCLAVES = [
@@ -29,11 +70,15 @@ const TARGET_EVENT_NAME = "MES Conclave 2026";
 
 export default function StudentDashboard() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { user, loading: authLoading } = useAuth();
     const [tickets, setTickets] = useState<Ticket[]>([]);
     const [qrUrl, setQrUrl] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [paymentLoading, setPaymentLoading] = useState(false);
+    const [showSuccess, setShowSuccess] = useState(false);
 
+    // --- FETCH DATA ---
     const fetchDashboardData = useCallback(async () => {
         try {
             const res = await apiClient.get('/tickets/my-tickets');
@@ -46,6 +91,20 @@ export default function StudentDashboard() {
         }
     }, []);
 
+    // --- CALLBACK URL STATUS HANDLER ---
+    useEffect(() => {
+        const status = searchParams.get('status');
+        if (status === 'success') {
+            setShowSuccess(true);
+            fetchDashboardData();
+            router.replace('/student');
+        } else if (status === 'failed') {
+            alert("❌ Payment Failed. Please try again.");
+            router.replace('/student');
+        }
+    }, [searchParams, fetchDashboardData, router]);
+
+    // --- AUTH CHECK ---
     useEffect(() => {
         if (!authLoading) {
             if (user) {
@@ -57,17 +116,27 @@ export default function StudentDashboard() {
         }
     }, [user, authLoading, fetchDashboardData, router]);
 
-    // --- FIX 1: Filter for VALID tickets only ---
-    // We check if the ticket exists AND if the payment was actually completed
+    // --- ACTIVE TICKET CHECK ---
     const activeTicket = tickets.find(t => 
         t.eventName === TARGET_EVENT_NAME && 
-        t.paymentStatus === 'completed' // Ensure this matches your backend status ('paid', 'success', etc.)
+        (t.paymentStatus === 'SUCCESS' || t.paymentStatus === 'PAID')
     );
     const hasPaidTicket = !!activeTicket;
 
-    // Generate QR
-    useEffect(() => {
-        if (activeTicket && user) {
+    // --- QR GENERATION ---
+ // --- SECURE QR GENERATION ---
+useEffect(() => {
+    if (activeTicket && user) {
+        // 1. If backend sent an encrypted hash, use it directly
+        if (activeTicket.qrData && activeTicket.qrData !== "VALIDATED") {
+            QRCode.toDataURL(activeTicket.qrData, { 
+                width: 300, 
+                margin: 2,
+                color: { dark: '#FFFFFF', light: '#00000000' }
+            }).then(setQrUrl);
+        } 
+        // 2. Fallback: generate local payload if qrData isn't ready yet
+        else {
             const payload = JSON.stringify({
                 username: user.name,
                 regNo: user.regNumber,
@@ -80,13 +149,61 @@ export default function StudentDashboard() {
                 margin: 2,
                 color: { dark: '#FFFFFF', light: '#00000000' }
             }).then(setQrUrl);
-        } else {
-            // --- FIX 2: Clear QR if no valid ticket ---
-            setQrUrl(null);
         }
-    }, [activeTicket, user]);
+    } else {
+        setQrUrl(null);
+    }
+}, [activeTicket, user]);
+    // --- 1. OPEN ATOM POPUP ---
+    const openAtomPay = (token: string, merchId: string) => {
+        const options = {
+            atomTokenId: token,
+            merchId: merchId,
+            custEmail: user?.personalEmail || "test@example.com",
+            custMobile: user?.phone || "9999999999",
+            returnUrl: `http://localhost:8080/payment/callback`,
+        };
 
-    const handleGetTickets = () => router.push('/events');
+        try {
+            // @ts-ignore
+            if (typeof AtomPaynetz === 'undefined') {
+                alert("Payment Gateway is still loading. Please try again.");
+                return;
+            }
+            // @ts-ignore
+            const atom = new AtomPaynetz(options, 'uat'); 
+            console.log("🚀 Launched Atom Popup");
+        } catch (error) {
+            console.error("Atom SDK Error:", error);
+            alert("Failed to launch payment popup.");
+        }
+    };
+
+    // --- 2. INITIATE PAYMENT ---
+    const handleBuyTicket = async () => {
+        setPaymentLoading(true);
+        try {
+            console.log("1. Requesting Token...");
+            const res = await apiClient.post('/payment/initiate', {
+                eventName: TARGET_EVENT_NAME,
+                amount: 1, // SET TO 1 FOR TESTING
+            });
+
+            const responseData = res.data.data || res.data;
+            if (responseData.atomTokenId) {
+                openAtomPay(responseData.atomTokenId, responseData.merchId);
+            } else {
+                throw new Error("No token received");
+            }
+
+        } catch (error: any) {
+            console.error("PAYMENT ERROR:", error);
+            const msg = error.response?.data?.message || error.message;
+            alert(`Payment Error: ${msg}`);
+        } finally {
+            setPaymentLoading(false);
+        }
+    };
 
     if (authLoading || loading) {
         return (
@@ -100,9 +217,20 @@ export default function StudentDashboard() {
 
     return (
         <div className="flex items-center justify-center min-h-screen w-full bg-[#050505] font-sans p-2 md:p-4 selection:bg-purple-500/30 text-white">
+            
+            <Script 
+                src={process.env.NEXT_PUBLIC_ATOM_CDN_URL} 
+                strategy="lazyOnload" 
+                onLoad={() => console.log("✅ Atom Payment SDK Loaded")}
+            />
+
+            <AnimatePresence>
+                {showSuccess && <SuccessOverlay onClose={() => setShowSuccess(false)} />}
+            </AnimatePresence>
+
             <div className="relative w-[96vw] max-w-[1600px] h-[92vh] bg-[#0a0a0a] rounded-[30px] overflow-hidden flex shadow-2xl border border-white/5">
                 
-                {/* LEFT SIDE */}
+                {/* --- LEFT SIDE: VISUALS + QR --- */}
                 <div className="hidden lg:block w-[35%] h-full relative overflow-hidden bg-black border-r border-white/5">
                     <Link 
                         href="/"
@@ -126,6 +254,7 @@ export default function StudentDashboard() {
                         >
                             <div className="relative overflow-hidden rounded-[24px] bg-white/5 backdrop-blur-xl border border-white/20 shadow-2xl p-1">
                                 <div className="relative rounded-[20px] bg-black/40 p-8 flex flex-col items-center text-center overflow-hidden">
+                                    
                                     <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-gradient-to-tr from-purple-500/30 to-blue-500/30 rounded-full blur-[60px] transition-all duration-700 ${hasPaidTicket ? 'opacity-100' : 'opacity-0'}`} />
 
                                     <div className="relative z-10 mb-6">
@@ -138,11 +267,12 @@ export default function StudentDashboard() {
                                                         <TicketIcon size={24} className="text-gray-400" />
                                                     </div>
                                                     <button 
-                                                        onClick={handleGetTickets}
-                                                        className="group flex items-center gap-2 px-5 py-2 bg-white text-black text-[10px] font-bold uppercase tracking-widest rounded-full hover:scale-105 transition-all shadow-[0_0_20px_rgba(255,255,255,0.15)] hover:shadow-[0_0_30px_rgba(255,255,255,0.3)]"
+                                                        onClick={handleBuyTicket}
+                                                        disabled={paymentLoading}
+                                                        className="group flex items-center gap-2 px-5 py-2 bg-white text-black text-[10px] font-bold uppercase tracking-widest rounded-full hover:scale-105 transition-all shadow-[0_0_20px_rgba(255,255,255,0.15)] hover:shadow-[0_0_30px_rgba(255,255,255,0.3)] disabled:opacity-70 disabled:cursor-not-allowed"
                                                     >
-                                                        <Plus size={12} strokeWidth={4} />
-                                                        Get Pass
+                                                        {paymentLoading ? <Loader2 size={12} className="animate-spin"/> : <Plus size={12} strokeWidth={4} />}
+                                                        {paymentLoading ? 'Processing...' : 'Get Pass'}
                                                     </button>
                                                 </div>
                                             )}
@@ -177,7 +307,7 @@ export default function StudentDashboard() {
                     </div>
                 </div>
 
-                {/* RIGHT SIDE */}
+                {/* --- RIGHT SIDE: DASHBOARD --- */}
                 <div className="w-full lg:w-[65%] h-full bg-[#0E0E0E] flex flex-col relative overflow-y-auto [&::-webkit-scrollbar]:w-[6px] [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-track]:bg-transparent">
                     <div className="p-8 md:p-12 pb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-white/5">
                         <div>
@@ -198,15 +328,17 @@ export default function StudentDashboard() {
 
                         {!hasPaidTicket && (
                             <button
-                                onClick={handleGetTickets}
-                                className="group relative px-6 py-2.5 bg-white text-black rounded-xl font-bold text-xs uppercase tracking-widest hover:scale-105 transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+                                onClick={handleBuyTicket}
+                                disabled={paymentLoading}
+                                className="group relative px-6 py-2.5 bg-white text-black rounded-xl font-bold text-xs uppercase tracking-widest hover:scale-105 transition-all duration-300 shadow-[0_0_20px_rgba(255,255,255,0.2)] disabled:opacity-70 disabled:cursor-not-allowed"
                             >
-                                Get Pass
+                                {paymentLoading ? 'Loading...' : 'Get Pass'}
                             </button>
                         )}
                     </div>
 
                     <div className="p-8 md:p-12 space-y-8">
+                        {/* 1. Quick Stats */}
                         <motion.div 
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -231,6 +363,7 @@ export default function StudentDashboard() {
                             </div>
                         </motion.div>
 
+                        {/* 2. Timeline */}
                         <motion.div 
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
